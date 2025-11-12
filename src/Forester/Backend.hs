@@ -87,7 +87,7 @@ data ForesterModule = ForesterModule
 foresterBackend :: Backend
 foresterBackend = Backend foresterBackend'
 
-foresterBackend' ::  Backend' ForesterOpts CompEnv ModuleEnv ForesterModule (Maybe ForesterDef)
+foresterBackend' ::  Backend' ForesterOpts CompEnv ModuleEnv ForesterModule ()
 foresterBackend' = Backend'
     { backendName = "Forester"
       -- ^ the name of the backend
@@ -134,14 +134,6 @@ fFlags =
 
 foresterPreCompile :: ForesterOpts -> TCMT IO CompEnv
 foresterPreCompile flgs = do
-    -- types' <- liftIO (doesFileExist "forest-info") >>= \case
-    --   True -> do
-    --     typesRaw <- liftIO $ BS.readFile "forest-info"
-    --     decode typesRaw >>= \case
-    --       Just a -> pure a
-    --       _ -> liftIO (putStrLn "Warning: Decoding of forest-info file unsuccesfull") >> pure mempty
-    --   _ -> liftIO (putStrLn "Warning: Could not find forest-info file") >> pure mempty
-
     types <- liftIO $ newIORef mempty -- types' 
 
     mods' <- liftIO (doesFileExist "forest-map.json") >>= \case
@@ -183,12 +175,9 @@ foresterCompileDef :: CompEnv
                    -> ModuleEnv
                    -> IsMain
                    -> Definition
-                   -> TCMT IO (Maybe ForesterDef)
+                   -> TCMT IO ()
 foresterCompileDef cenv mn _ def = do
   let defnName = render . pretty . qnameName . defName $ def
-  let fDef = ForesterDef (emptyMeta { title = (Just . pack $ defnName) , taxon = Just "agda definition"})
-                          (pack $ ((render . pretty.  modEnvName $ mn) <.> defnName))
-                          def
   let dType = defType def
 
   -- Modify the forestInfoHashMap - if nothing is
@@ -203,22 +192,6 @@ foresterCompileDef cenv mn _ def = do
           Nothing -> Just (FInfo {fqname = defName def, ftId = Nothing, fty = dType}))
       (pack defnName)
 
-  case theDef def of
-    ConstructorDefn _ -> pure Nothing
-    GeneralizableVar _ -> pure Nothing
-    PrimitiveDefn _ -> pure . pure $ fDef
-    PrimitiveSortDefn _ -> return . pure $ fDef
-    Axiom _ -> return . pure $ fDef {foresterDefTree = (foresterDefTree fDef){taxon=Just "agda postulate"}}
-    FunctionDefn fd ->
-      if not . isJust $ (_funExtLam fd) then
-        return . pure $ fDef {foresterDefTree = (foresterDefTree fDef){taxon=Just "agda function"}}
-      else return Nothing
-    -- AbstractDefn d -> return Nothing
-    RecordDefn rd -> return . pure $ fDef {foresterDefTree = (foresterDefTree fDef){taxon=Just "agda record type"}}
-    DatatypeDefn def -> return . pure $ fDef {foresterDefTree = (foresterDefTree fDef){taxon=Just "agda inductive definition"}}
-    _ -> do
-      return . pure $ fDef
-
 -- Use the html backend to produce marked-up html
 -- Construct trees for each definition - linking to the source
 -- and including the relevant part of the html
@@ -229,10 +202,9 @@ foresterPostModule :: CompEnv
                     -> ModuleEnv
                     -> IsMain
                     -> TopLevelModuleName
-                    -> [Maybe ForesterDef]
+                    -> [()]
                     -> TCMT IO ForesterModule
 foresterPostModule cenv menv _main tlname defs' = do
-  let defs = join . fmap (maybe [] (:[])) $ defs'
   (HtmlInputSourceFile _ ftype src hinfo) <- srcFileOfInterface tlname <$> curIF
   -- TODO: run treelist to get a tree map
   case ftype of
@@ -260,19 +232,6 @@ foresterPostModule cenv menv _main tlname defs' = do
     _ -> __IMPOSSIBLE__
   return $ ForesterModule
 
-
-
--- compileModStructured :: CompEnv -> TopLevelModuleName -> T.Text -> HighlightingInfo -> [ForesterDef] -> TCMT IO ()
--- compileModStructured cenv tlname src hinfo defs = do
---   let defToks = splitDef $ tokenStream src hinfo
---   submods <- curIF >>= \mi -> createModTree tlname (iModuleName mi) defs (_sigSections . iSignature $ mi) defToks
---   liftIO . putStrLn . render . pretty $ submods
---   let filePathRoot = (optsTreeDir . compileEnvOpts $ cenv )
---   hm <- liftIO $ readIORef (compileMods cenv)
---   ds <- liftIO $ readIORef (compileForestData cenv)
---   -- _ <- realiseModTree ds hm filePathRoot submods -- Structured not working atm - and not planning on being implemented
---   return ()
-
 -- Post compile we will write the forester defs to disk to use next time
 foresterPostCompile :: CompEnv
                     -> IsMain
@@ -281,20 +240,3 @@ foresterPostCompile :: CompEnv
 foresterPostCompile cenv main mods = do
   types <- liftIO $ readIORef (compileMods cenv)
   liftIO $ JSON.encodeFile "forest-map.json" types
-
-
-
--- definitionAnchor :: Definition -> Maybe Text
--- definitionAnchor def | defCopy def = Nothing
--- definitionAnchor def = f =<< go where
---   go :: Maybe FilePath
---   go = do
---     let name = defName def
---     case rangeModule (nameBindingSite (qnameName name)) of
---       Just f -> Just (modToFile f "html")
---       Nothing -> Nothing
---   f modn =
---     case rStart (nameBindingSite (qnameName (defName def))) of
---       Just pn -> pure $ Text.pack (modn <> "#" <> show (posPos pn))
---       Nothing -> Nothing
-

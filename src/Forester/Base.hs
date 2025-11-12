@@ -70,52 +70,6 @@ codeTree ds hm = join . fmap mkTree . splitByMarkup where
     Just Markup     -> __IMPOSSIBLE__
     _               -> fTok ds hm token
 
-
-
-definitionTree :: HashMap Text FInfo -> ModuleData -> ForesterDef -> [TokenInfo] -> Tree
-definitionTree ds hm def toks
-  = emptyTree
-  { treeId = Just . foresterDefId $ def
-  , treeMeta = foresterDefTree def
-  , treeContent =
-      [ Command "import" [Raw "macros"]
-      , Command "agda" [Raw . pack . mconcat $ fTok ds hm <$> toks]
-        -- Raw $ pack ("html" </> (render.pretty$tlname) <.> "html#" <> unpack (fromJust .title.foresterDefTree$def) )]
-      ]
-  }
-
-
-createTree :: HashMap Text FInfo -> ModuleData -> ModuleName -> [TopLevelModuleName] -> [TokenInfo] -> [Tree] -> Tree
-createTree ds hm tlname iMods preamb defs
-  = let meta = emptyMeta
-          { title = Just . pack .render . pretty $ tlname
-          , taxon = Just "agda module"
-          }
-        imports = Tree
-          { treeId = Nothing
-          , treeMeta = emptyMeta {title = Just "imports"}
-          , treeContent =
-            [ ul ((:[]) . toLink <$> iMods)
-            ]
-          }
-        preamble = Tree
-          { treeId = Nothing
-          , treeMeta = emptyMeta {title = Just "preamble"}
-          , treeContent =
-            [ Command "agda" [Raw . pack . mconcat $ fTok ds hm <$> preamb]
-            ]
-          }
-        content = Command "import" [Raw "macros"] : Subtree imports : Subtree preamble : fmap (transclude . fromJust . treeId) defs
-    in Tree
-    { treeId = Just . pack . render . pretty $ tlname
-    , treeMeta = meta
-    , treeContent = content
-    }
-
-
-toLink :: TopLevelModuleName -> ForesterContent'
-toLink = flip Link Nothing . pack . render . pretty
-
 -- | Converts module names to the corresponding HTML file names.
 
 modToFile :: TopLevelModuleName -> String -> FilePath
