@@ -20,6 +20,6 @@ import (builtins.fetchTarball {
 }) ({
   overlays = [
     (import ./haskell-packages.nix)
-    (ocamlOverlay)
+    # (ocamlOverlay)
     ];
 } // args)
