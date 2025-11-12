@@ -6,26 +6,40 @@
 }:
 let
   pkgs = import ./nix/nixpkgs.nix { inherit system; };
-  forester = builtins.getFlake "sourcehut:~jonsterling/ocaml-forester?rev=56de06afe952d752c1a13fdcd8bb56c5fef9956f";
+  forester = builtins.getFlake "sourcehut:~jonsterling/ocaml-forester?rev=58af4f74e009655999302e63c9c58f9640c262ad";
 
   myForester = forester.legacyPackages.${system};
 
   overlay = final: prev: {
-    ocamlfind =
-      prev.ocamlfind.overrideAttrs (_: {
-        version = "1.9.6";
-        src = pkgs.fetchurl {
-          url = "http://download2.camlcity.org/download/findlib-1.9.6.tar.gz";
-          sha256 = "sha256-LfmWJ5rha2Bttf9Yefk9v63giY258aPoL3+EX6opMKI=";
-        };
-      });
-          };
-  myForester' = myForester.overrideScope' overlay;
+    dune = prev.dune.overrideAttrs (o: {
+      version = "3.17.2";
+      src = builtins.fetchurl {
+        url = "https://github.com/ocaml/dune/releases/download/3.17.2/dune-3.17.2.tbz";
+        sha256 = "0r7al83jwkdfk6qvb53vrlzzfr08gwcydn1ccigfdsfg1vnzxslx";
+      };
+      nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.makeWrapper ];
+      postFixup =
+        if pkgs.stdenv.isDarwin then ''
+           wrapProgram $out/bin/dune \
+           --suffix PATH : "${pkgs.darwin.sigtool}/bin"
+        '' else "";
+    });
+
+    forester = prev.forester.overrideAttrs (_: {
+      DUNE_CACHE = "enabled";
+      DUNE_CACHE_TRANSPORT = "direct";
+      XDG_CACHE_HOME = "/tmp/dune-cache";
+    });
+  };
+  myForester' = myForester.overrideScope overlay;
+
+  treelist = builtins.getFlake (toString ./treelist);
 
   hsPkgs = pkgs.ourHaskellPackages;
   agdaForester = (hsPkgs.callCabal2nix "agda-forester" ./. {}).overrideAttrs(old: {
             buildInputs = (old.buildInputs or []) ++ [
               myForester'.forester
+              treelist.legacyPackages.${system}.treelist
             ];
 
             propagatedBuildInputs = (old.propagatedBuildInputs or [])
