@@ -6,14 +6,15 @@ module Forester.Structured where
 import Agda.Compiler.Backend
 import Agda.Syntax.Scope.Base (DataOrRecordModule(..), Scope (..))
 import Agda.Compiler.Common ( curIF )
+import Agda.Syntax.TopLevelModuleName
 import Agda.Syntax.Common.Pretty
 
-import Agda.Utils.Monad (forM, join, forM_)
 import Agda.Utils.Tuple ((/\))
 import Agda.Utils.Impossible (__IMPOSSIBLE__)
 import Agda.Utils.Maybe (fromJust)
 import qualified Agda.Utils.IO.UTF8 as UTF8
 
+import Control.Monad (forM, join, forM_)
 
 import qualified Data.Map.Strict as Map
 import qualified Data.List as List
@@ -26,6 +27,7 @@ import GHC.Generics
 import Control.DeepSeq
 
 import Forester.Base
+import Forester.Data
 import Forester.Forester
 import Data.HashMap.Strict (HashMap)
 import Agda.Syntax.Common (FileType)
@@ -55,13 +57,13 @@ createModTree tlname mn@(MName nms) defs secs code
     let submods = Map.keys secs
     rest <- forM (filter (immChildOf mn) submods) $ \nm -> do
       case scopeDatatypeModule =<< nm `Map.lookup` iScope mi of
-        Just IsDataModule -> return . Just . DataMod nm 
+        Just IsDataModule -> return . Just . DataMod nm
                                 (join . fmap snd . filter (stringStarts (render $ pretty nm). fst) $ code)
                               $ (filter (defStarts nm) defs)
-        Just IsRecordModule -> return . Just . RecordMod nm 
+        Just IsRecordModule -> return . Just . RecordMod nm
                                 (join . fmap snd . filter (stringStarts (render $ pretty nm) . fst) $ code)
                               $ (filter (defStarts nm) defs)
-        Nothing ->  Just <$> createModTree 
+        Nothing ->  Just <$> createModTree
                               tlname
                               nm
                               (filter (defStarts nm) defs)
@@ -81,7 +83,7 @@ createModTree tlname mn@(MName nms) defs secs code
                         [] -> Nothing
                         '.':xs -> Just xs
                         _ -> __IMPOSSIBLE__
-    
+
 
     imps <- fmap fst . iImportedModules <$> curIF
     return $ SubMods mn imps preamble (maybe [] (:[]) =<< rest) tlDefsWithCode
@@ -115,7 +117,7 @@ createModTree tlname mn@(MName nms) defs secs code
 
 
 
-realiseModTree :: HashMap Text Text -> HashMap TopLevelModuleName FileType -> FilePath -> Mod -> TCMT IO Tree
+realiseModTree :: HashMap Text FInfo -> HashMap TopLevelModuleName FileType -> FilePath -> Mod -> TCMT IO Tree
 realiseModTree _ _ root (DataMod   mname toks defs) = return emptyTree {treeId = Just . pack.render . pretty $ mname}
 realiseModTree _ _ root (RecordMod mname toks defs) = return emptyTree {treeId = Just . pack.render . pretty $ mname}
 realiseModTree ds hm root (SubMods mname imps preamble smods defs) = do
