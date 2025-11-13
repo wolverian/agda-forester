@@ -42,8 +42,14 @@ let
               treelist.legacyPackages.${system}.treelist
             ];
 
+            nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
+              treelist.legacyPackages.${system}.treelist
+            ];
+
             propagatedBuildInputs = (old.propagatedBuildInputs or [])
-                                    ++ [ myForester'.forester ];
+                                    ++ [ myForester'.forester
+                                         treelist.legacyPackages.${system}.treelist
+                                       ];
         }
   );
 in agdaForester

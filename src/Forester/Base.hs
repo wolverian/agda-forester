@@ -120,7 +120,7 @@ fTok defSrc md (pos, cont, asp) = appEndo (mconcat $ fmap (\c -> Endo (\x -> "\\
                     (show defPos))
                     -- Network.URI.Encode.encode (fromMaybe (show defPos) aName)) -- Named links disabled
                     (Network.URI.Encode.encode $ modToFile m "html")
-        in [\s -> "[" <> s <> "]" <> "(" <> "html/" <> l <> ")"]
+        in [\s -> "[" <> s <> "]" <> "(" <> "/html/" <> l <> ")"]
       Just (TreeFileType, it) -> [\s -> "[" <> s <> "]" <> "(" <> unpack (maybe (pack.render.pretty$m) id $ getSubtree it defPos) <> ")"]
       _ -> []
 

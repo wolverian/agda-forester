@@ -80,7 +80,7 @@ data ModuleEnv = ModuleEnv
   }
 
 data ForesterModule = ForesterModule
-  {  
+  {
   }
 
 
@@ -127,9 +127,9 @@ fFlags =
   , Option ['o'] ["forest-dir"] (OptArg (\r o -> case r of
        Just d -> return o{optsTreeDir = d}
        Nothing -> return o) "DIR") "directory in which tree files are written (default: trees)"
-  , Option [] ["html-dir"] (OptArg (\r o -> case r of
+  , Option [] ["fhtml-dir"] (OptArg (\r o -> case r of
       Just d -> return o{optsHtmlDir = d}
-      Nothing -> return o) "DIR") "director in which html files are written (default: assets/html)"
+      Nothing -> return o) "DIR") "directory in which forester HTML files are written (default: assets/html)"
   ]
 
 foresterPreCompile :: ForesterOpts -> TCMT IO CompEnv
