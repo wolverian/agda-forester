@@ -1,3 +1,5 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Forester.Base where
 
@@ -9,17 +11,21 @@ import Data.Text (Text, pack, unpack)
 import qualified Data.List as List
 import qualified Data.IntMap as IntMap
 
+import Control.Monad (join)
+import Control.Monad.State
+
 import Agda.Compiler.Backend hiding (topLevelModuleName, Name, Constructor)
 import Agda.Syntax.Common
+import Agda.Syntax.TopLevelModuleName
 import Agda.Interaction.Highlighting.Precise hiding (toList)
 
 import Agda.Utils.Impossible (__IMPOSSIBLE__)
 import Agda.Utils.Function (on, applyUnless)
 import Agda.Utils.Maybe (fromMaybe, fromJust, isJust)
 import Agda.Syntax.Common.Pretty
-import Agda.Utils.Monad (join)
 
 import Forester.Forester
+import Forester.Data
 import qualified Network.URI.Encode
 import System.FilePath
 import Data.HashMap.Strict (HashMap)
@@ -27,10 +33,10 @@ import qualified Data.HashMap.Strict as HM
 
 
 
-data ForesterDef = ForesterDef 
+data ForesterDef = ForesterDef
     { foresterDefTree :: ForesterMeta
     , foresterDefId   :: Text
-    , foresterDefDef  :: Definition 
+    , foresterDefDef  :: Definition
     }
 
 type TokenInfo =
@@ -42,7 +48,7 @@ type TokenInfo =
 aspectsTokenInfo :: TokenInfo -> Aspects
 aspectsTokenInfo (_,_,a) = a
 
-codeTree :: HashMap Text Text -> HashMap TopLevelModuleName FileType -> [TokenInfo] -> String
+codeTree :: HashMap Text FInfo -> ModuleData -> [TokenInfo] -> String
 codeTree ds hm = join . fmap mkTree . splitByMarkup where
 
   splitByMarkup :: [TokenInfo] -> [[TokenInfo]]
@@ -64,58 +70,13 @@ codeTree ds hm = join . fmap mkTree . splitByMarkup where
     Just Markup     -> __IMPOSSIBLE__
     _               -> fTok ds hm token
 
-definitionTree :: HashMap Text Text -> HashMap TopLevelModuleName FileType -> ForesterDef -> [TokenInfo] -> Tree
-definitionTree ds hm def toks
-  = emptyTree 
-  { treeId = Just . foresterDefId $ def
-  , treeMeta = foresterDefTree def
-  , treeContent = 
-      [ Command "import" [Raw "macros"]
-      , Command "agda" [Raw . pack . mconcat $ fTok ds hm <$> toks]
-        -- Raw $ pack ("html" </> (render.pretty$tlname) <.> "html#" <> unpack (fromJust .title.foresterDefTree$def) )]
-      ]
-  }
-
-
-createTree :: HashMap Text Text -> HashMap TopLevelModuleName FileType -> ModuleName -> [TopLevelModuleName] -> [TokenInfo] -> [Tree] -> Tree
-createTree ds hm tlname iMods preamb defs
-  = let meta = emptyMeta
-          { title = Just . pack .render . pretty $ tlname
-          , taxon = Just "agda module"
-          }
-        imports = Tree 
-          { treeId = Nothing
-          , treeMeta = emptyMeta {title = Just "imports"}
-          , treeContent = 
-            [ ul ((:[]) . toLink <$> iMods)
-            ]
-          }
-        preamble = Tree
-          { treeId = Nothing
-          , treeMeta = emptyMeta {title = Just "preamble"}
-          , treeContent =
-            [ Command "agda" [Raw . pack . mconcat $ fTok ds hm <$> preamb]
-            ]
-          }
-        content = Command "import" [Raw "macros"] : Subtree imports : Subtree preamble : fmap (transclude . fromJust . treeId) defs
-          
-    in Tree
-    { treeId = Just . pack . render . pretty $ tlname
-    , treeMeta = meta
-    , treeContent = content
-    }
-
-
-toLink :: TopLevelModuleName -> ForesterContent'
-toLink = flip Link Nothing . pack . render . pretty 
-
 -- | Converts module names to the corresponding HTML file names.
 
 modToFile :: TopLevelModuleName -> String -> FilePath
 modToFile m ext = Network.URI.Encode.encode $ render (pretty m) <.> ext
 
-fTok :: HashMap Text Text -> HashMap TopLevelModuleName FileType -> TokenInfo -> String
-fTok defSrc hm (pos, cont, asp) = appEndo (mconcat $ fmap (\c -> Endo (\x -> "\\" ++ c ++ "{" ++ x ++ "}")) classes <> annotate) $ filterC =<< cont where
+fTok :: HashMap Text FInfo -> ModuleData -> TokenInfo -> String
+fTok defSrc md (pos, cont, asp) = appEndo (mconcat $ fmap (\c -> Endo (\x -> "\\" ++ c ++ "{" ++ x ++ "}")) classes <> annotate) $ filterC =<< cont where
 
   filterC :: Char -> String
   filterC '(' = "\\lpar{}"
@@ -150,8 +111,8 @@ fTok defSrc hm (pos, cont, asp) = appEndo (mconcat $ fmap (\c -> Endo (\x -> "\\
   noteClasses _s = []
 
   link :: DefinitionSite -> [String -> String]
-  link (DefinitionSite m defPos _here aName) = case HM.lookup m hm of
-      Just AgdaFileType -> 
+  link (DefinitionSite m defPos _here aName) = case HM.lookup (pack.render.pretty$m) md of
+      Just (AgdaFileType, _) ->
         -- If the definition site points to the top of a file,
         -- we drop the anchor part and just link to the file.
         let l = applyUnless (defPos <= 1)
@@ -159,13 +120,18 @@ fTok defSrc hm (pos, cont, asp) = appEndo (mconcat $ fmap (\c -> Endo (\x -> "\\
                     (show defPos))
                     -- Network.URI.Encode.encode (fromMaybe (show defPos) aName)) -- Named links disabled
                     (Network.URI.Encode.encode $ modToFile m "html")
-        in [\s -> "[" <> s <> "]" <> "(" <> "html/" <> l <> ")"]
-      _ -> case flip HM.lookup defSrc . pack =<< aName of
-        Just a  -> [\s -> "[" <> s <> "]" <> "(" <> unpack a <> ")"]
-        Nothing -> case flip HM.lookup defSrc.pack.render.pretty $ m of
-            Just a -> [\s -> "[" <> s <> "]" <> "(" <> unpack a <> ")"]
-            Nothing -> []
+        in [\s -> "[" <> s <> "]" <> "(" <> "/html/" <> l <> ")"]
+      Just (TreeFileType, it) -> [\s -> "[" <> s <> "]" <> "(" <> unpack (maybe (pack.render.pretty$m) id $ getSubtree it defPos) <> ")"]
+      _ -> []
 
+  -- Are we at the definition site now?
+  here            :: TokenInfo -> Bool
+  here (_, s, mi)  = maybe False defSiteHere mDefinitionSite && isJust mDefSiteAnchor where
+    mDefinitionSite :: Maybe DefinitionSite
+    mDefinitionSite = definitionSite mi
+
+    mDefSiteAnchor  :: Maybe String
+    mDefSiteAnchor  = maybe __IMPOSSIBLE__ defSiteAnchor mDefinitionSite
 
   annotate :: [Endo String]
   annotate = join $ (fmap Endo . link <$> toList (definitionSite asp))
@@ -178,9 +144,9 @@ splitDef :: [TokenInfo]
           -> [(Maybe String, [TokenInfo])]
 splitDef = fmap help
          . split (keepDelimsL $ whenElt (\(a,_) -> isJust a))
-         . fmap (\xs@((_,_,x):_) -> (maybe Nothing (defSiteAnchor) (definitionSite x) , xs)) 
+         . fmap (\xs@((_,_,x):_) -> (maybe Nothing (defSiteAnchor) (definitionSite x) , xs))
          . split (keepDelimsL $ whenElt here)
- where 
+ where
   help :: [(Maybe String, [TokenInfo])] -> (Maybe String, [TokenInfo])
   help xs = ((fst . head) xs, join (fmap snd xs) )
 
@@ -192,7 +158,7 @@ splitDef = fmap help
 
     mDefSiteAnchor  :: Maybe String
     mDefSiteAnchor  = maybe __IMPOSSIBLE__ defSiteAnchor mDefinitionSite
-  
+
 
 
 -- | Constructs token stream ready to print.

@@ -10,14 +10,16 @@ import Data.Foldable (toList)
 
 import Agda.Compiler.Backend hiding (topLevelModuleName, Name, Constructor)
 import Agda.Syntax.Common
+import Agda.Syntax.TopLevelModuleName
 import Agda.Interaction.Highlighting.Precise hiding (toList)
 import Agda.Syntax.Common.Pretty
 
 import Agda.Utils.Impossible
 import qualified Agda.Utils.List1 as List1
-import Agda.Utils.Monad (guard)
 import Agda.Utils.Maybe (fromMaybe, isJust)
 import Agda.Utils.Function (applyUnless, applyWhen)
+
+import Control.Monad (guard)
 
 import qualified Network.URI.Encode
 
